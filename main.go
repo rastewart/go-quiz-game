@@ -8,11 +8,14 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/olekukonko/tablewriter"
 )
 
-// Assessment tracks the content and results of the test
+// Assessment tracks the content and results of the test.
 type Assessment struct {
 	Questions      []Question    //slice of Question stuct
 	TotalCorrect   int           //Number of Questions answered correctly
@@ -22,12 +25,13 @@ type Assessment struct {
 	Shuffle        bool          //Should the questions be randomized / shuffled
 	TimeLimit      time.Duration //The amount of time the user has to complete the test
 	TimeStart      time.Time     //Start time for the Assessment
+	Name           string        //Name of the user taking the Quiz
 }
 
 // ParseCmdLnArgs Reads the params from the commandline and sets
-// values on the Assessment struct
-// It is called from LoadQuestions
-// If the user adds -help, -h, or help arguments to the command then the program will show help and exit
+// values on the Assessment struct.
+// It is called from LoadQuestions.
+// If the user adds -help, -h, or help arguments to the command then the program will show help and then exit.
 func (a *Assessment) ParseCmdLnArgs() {
 
 	// Setup the help flag so that the message is displayed when the user asks for help
@@ -65,10 +69,10 @@ func (a *Assessment) ParseCmdLnArgs() {
 	}
 }
 
-// ShuffleQuestions will shuffle the questions in the Questions slice of the Assessment struct
-// This function is called from LoadQuestions
+// ShuffleQuestions will shuffle the questions in the Questions slice of the Assessment struct.
+// This function is called from LoadQuestions.
 func (a *Assessment) ShuffleQuestions() {
-	if len(a.Questions) == 0 || a.Shuffle != true { //if there are no questions don't do anything
+	if len(a.Questions) == 0 || !a.Shuffle { //if there are no questions don't do anything
 		return
 	}
 
@@ -76,8 +80,8 @@ func (a *Assessment) ShuffleQuestions() {
 	rand.Shuffle(len(a.Questions), func(i, j int) { a.Questions[i], a.Questions[j] = a.Questions[j], a.Questions[i] })
 }
 
-// LoadQuestions loads a csv file containing questions and answers
-// it returns an error if loading fails
+// LoadQuestions loads a csv file containing questions and answers.
+// it returns an error if loading fails.
 func (a *Assessment) LoadQuestions() (err error) {
 
 	a.ParseCmdLnArgs()
@@ -108,12 +112,33 @@ func (a *Assessment) LoadQuestions() (err error) {
 	return nil
 }
 
+func (a *Assessment) GreetUser() (err error) {
+	fmt.Println("Welcome to the Quiz Game")
+	fmt.Printf("Please enter your name: ")
+	reader := bufio.NewReader(os.Stdin)
+	a.Name, err = reader.ReadString('\n')
+
+	a.Name = strings.TrimSpace(a.Name)
+
+	if err != nil {
+		fmt.Println("Error occurred:", err)
+		return err
+	}
+	return nil
+}
+
 // StartTest administers the test by looping through the questions in the Questions slice
-// and sets properties of correct, incorrect, and total questions on the Assessment struct
-// it also runs the timer for the test
+// and setting the properties on the Assessment struct.
+// it also runs the timer for the test.
 func (a *Assessment) StartTest() (err error) {
 
-	fmt.Printf("You have %s to finish the test. There are %v questions in the test.\nHit ENTER to start the test", a.TimeLimit, a.TotalQuestions)
+	err = a.GreetUser()
+	if err != nil {
+		fmt.Println("Error occurred:", err)
+		return err
+	}
+
+	fmt.Printf("You have %s to finish the test. There are %v questions in the test.\nPress ENTER to start the test", a.TimeLimit, a.TotalQuestions)
 	reader := bufio.NewReader(os.Stdin)
 	_, err = reader.ReadString('\n')
 	if err != nil {
@@ -123,33 +148,30 @@ func (a *Assessment) StartTest() (err error) {
 	a.TimeStart = time.Now()
 	timer := time.AfterFunc(a.TimeLimit, func() {
 		fmt.Println("")
-		fmt.Println("Time's Up!")
+		fmt.Println("Time's Up", a.Name, "!")
 		a.ShowScore()
 		os.Exit(0)
 	})
 	defer timer.Stop()
 
-	qnum := 1
+	for i := 0; i < len(a.Questions); i++ {
+		err := a.Questions[i].AskQuestion(i + 1)
 
-	for _, v := range a.Questions {
-		response, err := v.AskQuestion(qnum)
 		if err != nil {
 			return err
 		}
-		if response {
+		if a.Questions[i].Correct {
 			a.TotalCorrect++
 		} else {
 			a.TotalIncorrect++
 		}
-		qnum++
 	}
-
 	a.ShowScore()
 
 	return nil
 }
 
-// ShowScore prints out the results of the test
+// ShowScore prints out the results of the test.
 func (a *Assessment) ShowScore() {
 
 	// if the user answered all the questions then tell them
@@ -160,39 +182,50 @@ func (a *Assessment) ShowScore() {
 		TestTime := Now.Sub(a.TimeStart)
 		TimeLeft := a.TimeLimit.Seconds() - TestTime.Seconds()
 
-		fmt.Printf("You answered all %v questions in %.2f seconds.  There were %.2f seconds remaining on the clock.\n",
+		fmt.Printf("You answered all %v questions in %.2f seconds.\nThere were %.2f seconds remaining on the clock.\n",
 			a.TotalQuestions, TestTime.Seconds(), TimeLeft)
 	} else {
 		fmt.Printf("You answered %v questions out of a total of %v questions in %.2f seconds.\n",
 			a.TotalCorrect+a.TotalIncorrect, a.TotalQuestions, a.TimeLimit.Seconds())
 	}
 	fmt.Printf("You got %v questions right and %v questions wrong.\n", a.TotalCorrect, a.TotalIncorrect)
-	fmt.Printf("Your score is %.2f%%\n", float32(a.TotalCorrect)/float32(a.TotalQuestions)*100)
+	fmt.Printf("Your score is %.2f%% %s! \n", float32(a.TotalCorrect)/float32(a.TotalQuestions)*100, a.Name)
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"#", "Question", "Answer", "User Answer", "Correct"})
+
+	for i, v := range a.Questions {
+		table.Append([]string{strconv.FormatInt(int64(i+1), 10), v.QText, v.Answer, v.UserAnswer, strconv.FormatBool(v.Correct)})
+	}
+
+	table.Render() // Send output
 }
 
-// Question struct stores the question text and corresponding answer
+// Question struct stores the fields for each question in the assessment.
 type Question struct {
-	QText  string //Question text
-	Answer string //Correct Answer for Question
+	QText      string //Question text
+	Answer     string //Correct Answer for Question
+	UserAnswer string //Answer the user Provided
+	Correct    bool   //Whether the user got the answer right or not
 }
 
-// AskQuestion delivers a question and returns true/false based on
-// whether the user provided the answer which matches the correct answer
-// qnum is the question number in the sequence
-func (Q *Question) AskQuestion(qnum int) (correct bool, err error) {
-	fmt.Printf("%v. %s = ", qnum, Q.QText)
+// AskQuestion delivers a question and tracks the user's response in the
+// Question struct.  The qnum variable tracks the number for the question.
+func (q *Question) AskQuestion(qnum int) (err error) {
+	fmt.Printf("%v. %s = ", qnum, q.QText)
 	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+	q.UserAnswer, err = reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error occurred:", err)
-		return false, err
+		return err
 	}
-	input = strings.TrimSpace(input)
+	q.UserAnswer = strings.TrimSpace(q.UserAnswer)
 
-	if input == Q.Answer { // Answer is correct
-		return true, nil
+	if q.UserAnswer == q.Answer { // Answer is correct
+		q.Correct = true
 	}
-	return false, nil
+
+	return nil
 }
 
 func main() {
