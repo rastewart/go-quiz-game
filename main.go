@@ -61,6 +61,7 @@ func (a *Assessment) ParseCmdLnArgs() {
 		v = strings.Trim(v, " ")
 		if v == "-help" || v == "-h" || v == "help" {
 			fmt.Println("------------------------")
+			fmt.Println("quiz - play a quiz game")
 			fmt.Println("** syntax -var=Value **")
 			flag.PrintDefaults()
 			fmt.Println("------------------------")
@@ -148,7 +149,7 @@ func (a *Assessment) StartTest() (err error) {
 	a.TimeStart = time.Now()
 	timer := time.AfterFunc(a.TimeLimit, func() {
 		fmt.Println("")
-		fmt.Println("Time's Up", a.Name, "!")
+		fmt.Printf("Time's Up %s!\n", a.Name)
 		a.ShowScore()
 		os.Exit(0)
 	})

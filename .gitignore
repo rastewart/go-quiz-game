@@ -5,6 +5,8 @@
 *.so
 *.dylib
 *.ignore
+main
+quiz
 
 # Test binary, built with `go test -c`
 *.test
